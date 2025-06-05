@@ -14,10 +14,10 @@ import { DepositDataJson, generateDepositData, GET_DEPOSIT_EVENTS } from "@/util
 export const depositAmountBN = parseUnits("1", 18);
 
 function useDeposit(contractConfig: ContractNetwork, address: `0x${string}`, chainId: number) {
-  const [deposits, setDeposits] = useState<DepositDataJson[]>([]);
+  const [deposits, setDeposits] = useState<DepositDataJson[][]>([]);
   const [credentialType, setCredentialType] = useState<CredentialType>();
   const [filename, setFilename] = useState("");
-  const [totalDepositAmountBN, setTotalDepositAmountBN] = useState(BigInt(0));
+  const [totalDepositAmountBN, setTotalDepositAmountBN] = useState<bigint[]>([BigInt(0)]);
   const { balance, refetchBalance } = useBalance(contractConfig, address);
   const { data: depositHash, error: contractError, writeContract } = useWriteContract();
   const { isSuccess: depositSuccess, error: txError } = useWaitForTransactionReceipt({
@@ -77,22 +77,26 @@ function useDeposit(contractConfig: ContractNetwork, address: `0x${string}`, cha
         throw Error(`All validators in the file must have the same withdrawal credentials of type ${_credentialType}`);
       }
 
-      if (validDeposits.length > MAX_BATCH_DEPOSIT) {
-        throw Error("Number of validators exceeds the maximum batch size of 128. Please upload a file with 128 or fewer validators.");
-      }
-
       if ((_credentialType === "00" || _credentialType === "01") && !validDeposits.every((d) => BigInt(d.amount) === BigInt(DEPOSIT_TOKEN_AMOUNT_OLD))) {
         throw Error("Amount should be exactly 32 tokens for deposits.");
       }
 
-      const _totalDepositAmountBN = validDeposits.reduce((sum, d) => sum + BigInt(d.amount), BigInt(0)) / BigInt(DEPOSIT_TOKEN_AMOUNT_OLD) * depositAmountBN;
+      const batchedDeposits: DepositDataJson[][] = [];
+      const batchedTotalDepositAmountBN: bigint[] = [];
+      const numOfBatches = Math.ceil(validDeposits.length / MAX_BATCH_DEPOSIT);
+      for (let i=0; i < numOfBatches; i ++) {
+        const batch = validDeposits.slice(i * MAX_BATCH_DEPOSIT, (i + 1) * MAX_BATCH_DEPOSIT);
+        batchedDeposits.push(batch);
+        batchedTotalDepositAmountBN.push(batch.reduce((sum, d) => sum + BigInt(d.amount), BigInt(0)) / BigInt(DEPOSIT_TOKEN_AMOUNT_OLD) * depositAmountBN);
+      }
 
-      if (balance < _totalDepositAmountBN) {
-        throw Error(`Unsufficient balance. ${Number(formatUnits(_totalDepositAmountBN, 18))} GNO is required.
+      const balanceRequired = batchedTotalDepositAmountBN.reduce((sum, d) => sum + d, BigInt(0));
+      if (balance < balanceRequired) {
+        throw Error(`Unsufficient balance. ${Number(formatUnits(balanceRequired, 18))} GNO is required.
       `);
       }
 
-      return { deposits: validDeposits, _credentialType, _totalDepositAmountBN };
+      return { deposits: batchedDeposits, _credentialType, _totalDepositAmountBN: batchedTotalDepositAmountBN };
     },
     [contractConfig, apolloClient, chainId]
   );
@@ -127,18 +131,20 @@ function useDeposit(contractConfig: ContractNetwork, address: `0x${string}`, cha
 
   const deposit = useCallback(async () => {
     if (contractConfig) {
-      const data = generateDepositData(deposits, credentialType === "01" || credentialType === "02");
-      //TODO: add back promise all in case of 0x00
-      writeContract({
-        address: contractConfig.addresses.token,
-        abi: ERC677ABI,
-        functionName: "transferAndCall",
-        args: [
-          contractConfig.addresses.deposit,
-          credentialType === '02' || credentialType === "01" ? totalDepositAmountBN : depositAmountBN,
-          `0x${data}`,
-        ],
-      });
+      for (let i = 0; i < deposits.length; i++) {
+        const data = generateDepositData(deposits[i], credentialType === "01" || credentialType === "02");
+        //TODO: add back promise all in case of 0x00
+        writeContract({
+          address: contractConfig.addresses.token,
+          abi: ERC677ABI,
+          functionName: "transferAndCall",
+          args: [
+        contractConfig.addresses.deposit,
+        totalDepositAmountBN[i],
+        `0x${data}`,
+          ],
+        });
+      }
 
       // should move refetchBalance to onDeposit function ?
       refetchBalance();
