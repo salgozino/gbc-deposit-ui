@@ -57,8 +57,11 @@ function useDeposit(contractConfig: ContractNetwork, address: `0x${string}`, cha
       if (validDeposits.length === 0) throw Error("Deposits have already been made to all validators in this file.");
 
       if (validDeposits.length !== deposits.length) {
-        throw Error(
-          "Some of the deposits have already been made to the validators in this file."
+        // throw Error(
+        //   "Some of the deposits have already been made to the validators in this file."
+        // );
+        console.warn(
+          "Some of the deposits have already been made to the validators in this file. Only new deposits will be processed."
         );
       }
 
@@ -81,6 +84,28 @@ function useDeposit(contractConfig: ContractNetwork, address: `0x${string}`, cha
         throw Error("Amount should be exactly 32 tokens for deposits.");
       }
 
+      const balanceRequired = validDeposits.reduce((sum, d) => sum + BigInt(d.amount), BigInt(0)) / BigInt(DEPOSIT_TOKEN_AMOUNT_OLD) * depositAmountBN;
+      
+      if (balance < balanceRequired) {
+        console.warn(`Insufficient balance. ${formatUnits(balanceRequired, 18)} GNO is required to process all deposits in the file. We are going to process only those who can be processed with the current balance.
+      `);
+        let cumBlance = BigInt(0);
+        let lastIndex = 0;
+        for (const d of validDeposits) {
+          cumBlance += BigInt(d.amount) / BigInt(DEPOSIT_TOKEN_AMOUNT_OLD) * depositAmountBN;
+          if (balance >= cumBlance) {
+            lastIndex++;
+          } else {
+            console.warn(`Skipping deposits starting after index ${lastIndex} due to insufficient balance.`);
+            break;
+          }
+        }
+        validDeposits.splice(lastIndex);
+      }
+      if (validDeposits.length === 0) {
+        throw Error("Insufficient balance to process any deposits in the file.");
+      }
+
       const batchedDeposits: DepositDataJson[][] = [];
       const batchedTotalDepositAmountBN: bigint[] = [];
       const numOfBatches = Math.ceil(validDeposits.length / MAX_BATCH_DEPOSIT);
@@ -90,11 +115,7 @@ function useDeposit(contractConfig: ContractNetwork, address: `0x${string}`, cha
         batchedTotalDepositAmountBN.push(batch.reduce((sum, d) => sum + BigInt(d.amount), BigInt(0)) / BigInt(DEPOSIT_TOKEN_AMOUNT_OLD) * depositAmountBN);
       }
 
-      const balanceRequired = batchedTotalDepositAmountBN.reduce((sum, d) => sum + d, BigInt(0));
-      if (balance < balanceRequired) {
-        throw Error(`Unsufficient balance. ${Number(formatUnits(balanceRequired, 18))} GNO is required.
-      `);
-      }
+      
 
       return { deposits: batchedDeposits, _credentialType, _totalDepositAmountBN: batchedTotalDepositAmountBN };
     },
