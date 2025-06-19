@@ -3,16 +3,17 @@ import {
   useWriteContract,
   useWaitForTransactionReceipt,
 } from "wagmi";
+import { useWriteContracts } from 'wagmi/experimental'
 import { ContractNetwork } from "@/utils/contracts";
 import ERC677ABI from "@/utils/abis/erc677";
 import depositABI from "@/utils/abis/deposit";
-import { formatUnits, parseUnits } from "viem";
+import { encodeFunctionData, formatUnits } from "viem";
 import useBalance from "./useBalance";
 import { useApolloClient } from '@apollo/client';
-import { CredentialType, DEPOSIT_TOKEN_AMOUNT_OLD, getCredentialType, MAX_BATCH_DEPOSIT } from "@/utils/constants";
+import { CredentialType, DEPOSIT_TOKEN_AMOUNT_OLD, getCredentialType, MAX_BATCH_DEPOSIT, depositAmountBN } from "@/utils/constants";
 import { DepositDataJson, generateDepositData, GET_DEPOSIT_EVENTS } from "@/utils/deposit";
 
-export const depositAmountBN = parseUnits("1", 18);
+
 
 function useDeposit(contractConfig: ContractNetwork, address: `0x${string}`, chainId: number) {
   const [deposits, setDeposits] = useState<DepositDataJson[][]>([]);
@@ -24,6 +25,8 @@ function useDeposit(contractConfig: ContractNetwork, address: `0x${string}`, cha
   const { isSuccess: depositSuccess, error: txError } = useWaitForTransactionReceipt({
     hash: depositHash,
   });
+  const { writeContracts } = useWriteContracts()
+
 
   const apolloClient = useApolloClient();
 
@@ -79,6 +82,10 @@ function useDeposit(contractConfig: ContractNetwork, address: `0x${string}`, cha
 
       if (!validDeposits.every((d) => d.withdrawal_credentials.startsWith(_credentialType))) {
         throw Error(`All validators in the file must have the same withdrawal credentials of type ${_credentialType}`);
+      }
+
+      if (!validDeposits.every((d) => d.withdrawal_credentials === validDeposits[0].withdrawal_credentials)) {
+        throw Error(`All validators in the file must have the same withdrawal credential`);
       }
 
       if ((_credentialType === "00" || _credentialType === "01") && !validDeposits.every((d) => BigInt(d.amount) === BigInt(DEPOSIT_TOKEN_AMOUNT_OLD))) {
@@ -153,34 +160,64 @@ function useDeposit(contractConfig: ContractNetwork, address: `0x${string}`, cha
 
   const deposit = useCallback(async () => {
     if (contractConfig) {
-      for (let i = 0; i < deposits.length; i++) {
-        const {pubkeys, withdrawalCredentials, signatures, depositDataRoots, amounts}= generateDepositData(deposits[i]);
-        // approve the GNO spending in favor of the deposit contract
+       // approve the GNO spending in favor of the deposit contract
         writeContract({
           address: contractConfig.addresses.token,
           abi: ERC677ABI,
           functionName: "approve",
           args: [
             contractConfig.addresses.deposit,
-            totalDepositAmountBN[i],
+            totalDepositAmountBN.reduce((sum, amount) => sum + amount, BigInt(0)),
           ],
         });
-
+      for (let i = 0; i < deposits.length; i++) {
+        const {pubkeys, withdrawalCredentials, signatures, depositDataRoots, amounts}= generateDepositData(deposits[i]);
         // batchDeposit the GNOs
-        console.log(pubkeys, withdrawalCredentials, signatures, depositDataRoots, amounts);
         writeContract({
           address: contractConfig.addresses.deposit,
           abi: depositABI,
           functionName: "batchDeposit",
           args: [pubkeys, withdrawalCredentials, signatures, depositDataRoots, amounts],
         })
-
       }
 
       // should move refetchBalance to onDeposit function ?
       refetchBalance();
     }
   }, [contractConfig, credentialType, deposits, refetchBalance, totalDepositAmountBN, writeContract]);
+
+  const depositSafeMsig = useCallback(async () => {
+    if (contractConfig) {
+      const txs: any[] = [{
+          address: contractConfig.addresses.token,
+          abi: ERC677ABI,
+          functionName: "approve",
+          args: [
+            contractConfig.addresses.deposit,
+            totalDepositAmountBN.reduce((sum, amount) => sum + amount, BigInt(0)),
+          ],
+        }]
+      
+      for (let i = 0; i < deposits.length; i++) {
+        const {pubkeys, withdrawalCredentials, signatures, depositDataRoots, amounts}= generateDepositData(deposits[i]);
+        // batchDeposit the GNOs
+        console.log("Batch deposit",i, pubkeys, withdrawalCredentials, signatures, depositDataRoots, amounts);
+        txs.push({
+          address: contractConfig.addresses.deposit,
+          abi: depositABI,
+          functionName: "batchDeposit",
+          args: [pubkeys, withdrawalCredentials, signatures, depositDataRoots, amounts],
+        })
+      }
+      console.log(txs)
+      writeContracts({
+        contracts: txs,
+        chainId: 100,
+      });
+      // should move refetchBalance to onDeposit function ?
+      refetchBalance();
+    }
+  }, [contractConfig, , deposits, refetchBalance, totalDepositAmountBN, encodeFunctionData]);
 
   useEffect(() => {
     if (depositSuccess) {
@@ -190,6 +227,7 @@ function useDeposit(contractConfig: ContractNetwork, address: `0x${string}`, cha
 
   return {
     deposit,
+    depositSafeMsig,
     depositSuccess,
     contractError,
     txError,

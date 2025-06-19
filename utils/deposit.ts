@@ -3,6 +3,7 @@
 
 import { gql } from "@apollo/client";
 import { Address } from "viem";
+import { DEPOSIT_TOKEN_AMOUNT_OLD, depositAmountBN } from "./constants";
 
 type DepositData = {
   lastBlock: bigint;
@@ -45,18 +46,21 @@ export async function loadCachedDeposits(chainId: number, depositStartBlockNumbe
 }
 
 export const generateDepositData = (deposits: DepositDataJson[]): BatchDepositInputs => {
+  // The withdrawal credentials are the same for all deposits in a batch
+  // This is validated in the hook
+  const withdrawalCredentials: `0x${string}` = `0x${deposits[0].withdrawal_credentials}`;
+  
   let pubkeys: `0x${string}` = '0x';
-  let withdrawalCredentials: `0x${string}` = '0x';
   let signatures: `0x${string}` = '0x';
   let depositDataRoots: `0x${string}`[] = [];
   let amounts: bigint[] = [];
 
   deposits.forEach((deposit) => {
-    withdrawalCredentials += deposit.withdrawal_credentials;
     pubkeys += deposit.pubkey;
     signatures += deposit.signature;
     depositDataRoots.push(`0x${deposit.deposit_data_root}`);
-    amounts.push(deposit.amount);
+    // amount / 32 * 1, because, now in batchDeposit we use 1 ETH per validator, not 32 as in transferAndCall
+    amounts.push(BigInt(deposit.amount) / BigInt(DEPOSIT_TOKEN_AMOUNT_OLD) * depositAmountBN);
   });
 
   return { pubkeys, withdrawalCredentials, signatures, depositDataRoots, amounts };

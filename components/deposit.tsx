@@ -42,6 +42,7 @@ export default function Deposit({
     setDepositData,
     depositData,
     deposit,
+    depositSafeMsig,
     depositSuccess,
     contractError,
     txError,
@@ -118,8 +119,9 @@ export default function Deposit({
 
   const onDeposit = useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true }));
-    await deposit();
-  }, [deposit]);
+    // TODO: check if it's a safe msig deposit or an EOA
+    await depositSafeMsig();
+  }, [depositSafeMsig]);
 
   useEffect(() => {
     if (depositSuccess) {
