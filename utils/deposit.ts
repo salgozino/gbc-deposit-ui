@@ -19,6 +19,14 @@ export type DepositDataJson = {
   fork_version: string;
 };
 
+export type BatchDepositInputs = {
+  pubkeys: `0x${string}`;
+  withdrawalCredentials: `0x${string}`;
+  signatures: `0x${string}`;
+  depositDataRoots: `0x${string}`[];
+  amounts: bigint[];
+}
+
 export async function loadCachedDeposits(chainId: number, depositStartBlockNumber: bigint): Promise<DepositData> {
   try {
     const {
@@ -36,24 +44,22 @@ export async function loadCachedDeposits(chainId: number, depositStartBlockNumbe
   };
 }
 
-export const generateDepositData = (deposits: DepositDataJson[], isBatch: boolean): string => {
-  let data = "";
-  if (isBatch) {
-    data += deposits[0].withdrawal_credentials;
-    deposits.forEach((deposit) => {
-      data += deposit.pubkey;
-      data += deposit.signature;
-      data += deposit.deposit_data_root;
-    });
-  } else {
-    deposits.forEach((deposit) => {
-      data += deposit.withdrawal_credentials;
-      data += deposit.pubkey;
-      data += deposit.signature;
-      data += deposit.deposit_data_root;
-    });
-  }
-  return data;
+export const generateDepositData = (deposits: DepositDataJson[]): BatchDepositInputs => {
+  let pubkeys: `0x${string}` = '0x';
+  let withdrawalCredentials: `0x${string}` = '0x';
+  let signatures: `0x${string}` = '0x';
+  let depositDataRoots: `0x${string}`[] = [];
+  let amounts: bigint[] = [];
+
+  deposits.forEach((deposit) => {
+    withdrawalCredentials += deposit.withdrawal_credentials;
+    pubkeys += deposit.pubkey;
+    signatures += deposit.signature;
+    depositDataRoots.push(`0x${deposit.deposit_data_root}`);
+    amounts.push(deposit.amount);
+  });
+
+  return { pubkeys, withdrawalCredentials, signatures, depositDataRoots, amounts };
 };
 
 export const GET_DEPOSIT_EVENTS = gql`

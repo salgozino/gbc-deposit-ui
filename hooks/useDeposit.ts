@@ -5,6 +5,7 @@ import {
 } from "wagmi";
 import { ContractNetwork } from "@/utils/contracts";
 import ERC677ABI from "@/utils/abis/erc677";
+import depositABI from "@/utils/abis/deposit";
 import { formatUnits, parseUnits } from "viem";
 import useBalance from "./useBalance";
 import { useApolloClient } from '@apollo/client';
@@ -153,18 +154,27 @@ function useDeposit(contractConfig: ContractNetwork, address: `0x${string}`, cha
   const deposit = useCallback(async () => {
     if (contractConfig) {
       for (let i = 0; i < deposits.length; i++) {
-        const data = generateDepositData(deposits[i], credentialType === "01" || credentialType === "02");
-        //TODO: add back promise all in case of 0x00
+        const {pubkeys, withdrawalCredentials, signatures, depositDataRoots, amounts}= generateDepositData(deposits[i]);
+        // approve the GNO spending in favor of the deposit contract
         writeContract({
           address: contractConfig.addresses.token,
           abi: ERC677ABI,
-          functionName: "transferAndCall",
+          functionName: "approve",
           args: [
-        contractConfig.addresses.deposit,
-        totalDepositAmountBN[i],
-        `0x${data}`,
+            contractConfig.addresses.deposit,
+            totalDepositAmountBN[i],
           ],
         });
+
+        // batchDeposit the GNOs
+        console.log(pubkeys, withdrawalCredentials, signatures, depositDataRoots, amounts);
+        writeContract({
+          address: contractConfig.addresses.deposit,
+          abi: depositABI,
+          functionName: "batchDeposit",
+          args: [pubkeys, withdrawalCredentials, signatures, depositDataRoots, amounts],
+        })
+
       }
 
       // should move refetchBalance to onDeposit function ?
