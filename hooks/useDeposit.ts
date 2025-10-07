@@ -1,32 +1,47 @@
-import { useCallback, useState, useEffect } from "react";
-import {
-  useWriteContract,
-  useWaitForTransactionReceipt,
-} from "wagmi";
-import { useWriteContracts } from 'wagmi/experimental'
-import { ContractNetwork } from "@/utils/contracts";
-import ERC677ABI from "@/utils/abis/erc677";
 import depositABI from "@/utils/abis/deposit";
+import ERC677ABI from "@/utils/abis/erc677";
+import {
+  CredentialType,
+  DEPOSIT_TOKEN_AMOUNT_OLD,
+  depositAmountBN,
+  getCredentialType,
+  MAX_BATCH_DEPOSIT,
+} from "@/utils/constants";
+import { ContractNetwork } from "@/utils/contracts";
+import {
+  DepositDataJson,
+  generateDepositData,
+  GET_DEPOSIT_EVENTS,
+} from "@/utils/deposit";
+import { useApolloClient } from "@apollo/client";
+import { useCallback, useEffect, useState } from "react";
 import { encodeFunctionData, formatUnits } from "viem";
+import { useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import { useWriteContracts } from "wagmi/experimental";
 import useBalance from "./useBalance";
-import { useApolloClient } from '@apollo/client';
-import { CredentialType, DEPOSIT_TOKEN_AMOUNT_OLD, getCredentialType, MAX_BATCH_DEPOSIT, depositAmountBN } from "@/utils/constants";
-import { DepositDataJson, generateDepositData, GET_DEPOSIT_EVENTS } from "@/utils/deposit";
 
-
-
-function useDeposit(contractConfig: ContractNetwork, address: `0x${string}`, chainId: number) {
+function useDeposit(
+  contractConfig: ContractNetwork,
+  address: `0x${string}`,
+  chainId: number
+) {
   const [deposits, setDeposits] = useState<DepositDataJson[][]>([]);
   const [credentialType, setCredentialType] = useState<CredentialType>();
   const [filename, setFilename] = useState("");
-  const [totalDepositAmountBN, setTotalDepositAmountBN] = useState<bigint[]>([BigInt(0)]);
+  const [totalDepositAmountBN, setTotalDepositAmountBN] = useState<bigint[]>([
+    BigInt(0),
+  ]);
   const { balance, refetchBalance } = useBalance(contractConfig, address);
-  const { data: depositHash, error: contractError, writeContract } = useWriteContract();
-  const { isSuccess: depositSuccess, error: txError } = useWaitForTransactionReceipt({
-    hash: depositHash,
-  });
-  const { writeContracts } = useWriteContracts()
-
+  const {
+    data: depositHash,
+    error: contractError,
+    writeContract,
+  } = useWriteContract();
+  const { isSuccess: depositSuccess, error: txError } =
+    useWaitForTransactionReceipt({
+      hash: depositHash,
+    });
+  const { writeContracts } = useWriteContracts();
 
   const apolloClient = useApolloClient();
 
@@ -35,14 +50,25 @@ function useDeposit(contractConfig: ContractNetwork, address: `0x${string}`, cha
       let _credentialType: CredentialType | undefined;
 
       const isValidJson = deposits.every((d) =>
-        ["pubkey", "withdrawal_credentials", "amount", "signature", "deposit_message_root", "deposit_data_root", "fork_version"].every((key) => key in d)
+        [
+          "pubkey",
+          "withdrawal_credentials",
+          "amount",
+          "signature",
+          "deposit_message_root",
+          "deposit_data_root",
+          "fork_version",
+        ].every((key) => key in d)
       );
       if (!isValidJson) throw Error("Invalid JSON structure.");
 
-      if (!deposits.every((d) => d.fork_version === contractConfig.forkVersion)) {
+      if (
+        !deposits.every((d) => d.fork_version === contractConfig.forkVersion)
+      ) {
         throw Error(`File is for the wrong network. Expected: ${chainId}`);
       }
 
+      console.log(`The file has ${deposits.length} deposits.`);
       const pubkeys = deposits.map((d) => `0x${d.pubkey}`);
       const { data } = await apolloClient.query({
         query: GET_DEPOSIT_EVENTS,
@@ -53,12 +79,19 @@ function useDeposit(contractConfig: ContractNetwork, address: `0x${string}`, cha
       });
 
       const existingDeposits = new Set(
-        data.SBCDepositContract_DepositEvent.map((d: { pubkey: string }) => d.pubkey)
+        data.SBCDepositContract_DepositEvent.map(
+          (d: { pubkey: string }) => d.pubkey
+        )
       );
 
-      const validDeposits = deposits.filter((d) => !existingDeposits.has(d.pubkey));
+      const validDeposits = deposits.filter(
+        (d) => !existingDeposits.has(`0x${d.pubkey}`)
+      );
 
-      if (validDeposits.length === 0) throw Error("Deposits have already been made to all validators in this file.");
+      if (validDeposits.length === 0)
+        throw Error(
+          "Deposits have already been made to all validators in this file."
+        );
 
       if (validDeposits.length !== deposits.length) {
         // throw Error(
@@ -80,52 +113,91 @@ function useDeposit(contractConfig: ContractNetwork, address: `0x${string}`, cha
         throw Error("Invalid withdrawal credential type.");
       }
 
-      if (!validDeposits.every((d) => d.withdrawal_credentials.startsWith(_credentialType))) {
-        throw Error(`All validators in the file must have the same withdrawal credentials of type ${_credentialType}`);
+      if (
+        !validDeposits.every((d) =>
+          d.withdrawal_credentials.startsWith(_credentialType)
+        )
+      ) {
+        throw Error(
+          `All validators in the file must have the same withdrawal credentials of type ${_credentialType}`
+        );
       }
 
-      if (!validDeposits.every((d) => d.withdrawal_credentials === validDeposits[0].withdrawal_credentials)) {
-        throw Error(`All validators in the file must have the same withdrawal credential`);
+      if (
+        !validDeposits.every(
+          (d) =>
+            d.withdrawal_credentials === validDeposits[0].withdrawal_credentials
+        )
+      ) {
+        throw Error(
+          `All validators in the file must have the same withdrawal credential`
+        );
       }
 
-      if ((_credentialType === "00" || _credentialType === "01") && !validDeposits.every((d) => BigInt(d.amount) === BigInt(DEPOSIT_TOKEN_AMOUNT_OLD))) {
+      if (
+        (_credentialType === "00" || _credentialType === "01") &&
+        !validDeposits.every(
+          (d) => BigInt(d.amount) === BigInt(DEPOSIT_TOKEN_AMOUNT_OLD)
+        )
+      ) {
         throw Error("Amount should be exactly 32 tokens for deposits.");
       }
 
-      const balanceRequired = validDeposits.reduce((sum, d) => sum + BigInt(d.amount), BigInt(0)) / BigInt(DEPOSIT_TOKEN_AMOUNT_OLD) * depositAmountBN;
-      
+      const balanceRequired =
+        (validDeposits.reduce((sum, d) => sum + BigInt(d.amount), BigInt(0)) /
+          BigInt(DEPOSIT_TOKEN_AMOUNT_OLD)) *
+        depositAmountBN;
+
       if (balance < balanceRequired) {
-        console.warn(`Insufficient balance. ${formatUnits(balanceRequired, 18)} GNO is required to process all deposits in the file. We are going to process only those who can be processed with the current balance.
+        console.warn(`Insufficient balance. ${formatUnits(
+          balanceRequired,
+          18
+        )} GNO is required to process all deposits in the file. We are going to process only those who can be processed with the current balance.
       `);
         let cumBlance = BigInt(0);
         let lastIndex = 0;
         for (const d of validDeposits) {
-          cumBlance += BigInt(d.amount) / BigInt(DEPOSIT_TOKEN_AMOUNT_OLD) * depositAmountBN;
+          cumBlance +=
+            (BigInt(d.amount) / BigInt(DEPOSIT_TOKEN_AMOUNT_OLD)) *
+            depositAmountBN;
           if (balance >= cumBlance) {
             lastIndex++;
           } else {
-            console.warn(`Skipping deposits starting after index ${lastIndex} due to insufficient balance.`);
+            console.warn(
+              `Skipping deposits starting after index ${lastIndex} due to insufficient balance.`
+            );
             break;
           }
         }
         validDeposits.splice(lastIndex);
       }
       if (validDeposits.length === 0) {
-        throw Error("Insufficient balance to process any deposits in the file.");
+        throw Error(
+          "Insufficient balance to process any deposits in the file."
+        );
       }
 
       const batchedDeposits: DepositDataJson[][] = [];
       const batchedTotalDepositAmountBN: bigint[] = [];
       const numOfBatches = Math.ceil(validDeposits.length / MAX_BATCH_DEPOSIT);
-      for (let i=0; i < numOfBatches; i ++) {
-        const batch = validDeposits.slice(i * MAX_BATCH_DEPOSIT, (i + 1) * MAX_BATCH_DEPOSIT);
+      for (let i = 0; i < numOfBatches; i++) {
+        const batch = validDeposits.slice(
+          i * MAX_BATCH_DEPOSIT,
+          (i + 1) * MAX_BATCH_DEPOSIT
+        );
         batchedDeposits.push(batch);
-        batchedTotalDepositAmountBN.push(batch.reduce((sum, d) => sum + BigInt(d.amount), BigInt(0)) / BigInt(DEPOSIT_TOKEN_AMOUNT_OLD) * depositAmountBN);
+        batchedTotalDepositAmountBN.push(
+          (batch.reduce((sum, d) => sum + BigInt(d.amount), BigInt(0)) /
+            BigInt(DEPOSIT_TOKEN_AMOUNT_OLD)) *
+            depositAmountBN
+        );
       }
 
-      
-
-      return { deposits: batchedDeposits, _credentialType, _totalDepositAmountBN: batchedTotalDepositAmountBN };
+      return {
+        deposits: batchedDeposits,
+        _credentialType,
+        _totalDepositAmountBN: batchedTotalDepositAmountBN,
+      };
     },
     [contractConfig, apolloClient, chainId]
   );
@@ -145,10 +217,8 @@ function useDeposit(contractConfig: ContractNetwork, address: `0x${string}`, cha
         if (balance === undefined) {
           throw Error("Balance not loaded correctly.");
         }
-        const { deposits, _credentialType, _totalDepositAmountBN } = await validate(
-          data,
-          balance
-        );
+        const { deposits, _credentialType, _totalDepositAmountBN } =
+          await validate(data, balance);
         setDeposits(deposits);
         setCredentialType(_credentialType);
         setTotalDepositAmountBN(_totalDepositAmountBN);
@@ -160,56 +230,100 @@ function useDeposit(contractConfig: ContractNetwork, address: `0x${string}`, cha
 
   const deposit = useCallback(async () => {
     if (contractConfig) {
-       // approve the GNO spending in favor of the deposit contract
-        writeContract({
-          address: contractConfig.addresses.token,
-          abi: ERC677ABI,
-          functionName: "approve",
-          args: [
-            contractConfig.addresses.deposit,
-            totalDepositAmountBN.reduce((sum, amount) => sum + amount, BigInt(0)),
-          ],
-        });
+      // approve the GNO spending in favor of the deposit contract
+      writeContract({
+        address: contractConfig.addresses.token,
+        abi: ERC677ABI,
+        functionName: "approve",
+        args: [
+          contractConfig.addresses.deposit,
+          totalDepositAmountBN.reduce((sum, amount) => sum + amount, BigInt(0)),
+        ],
+      });
       for (let i = 0; i < deposits.length; i++) {
-        const {pubkeys, withdrawalCredentials, signatures, depositDataRoots, amounts}= generateDepositData(deposits[i]);
+        const {
+          pubkeys,
+          withdrawalCredentials,
+          signatures,
+          depositDataRoots,
+          amounts,
+        } = generateDepositData(deposits[i]);
         // batchDeposit the GNOs
         writeContract({
           address: contractConfig.addresses.deposit,
           abi: depositABI,
           functionName: "batchDeposit",
-          args: [pubkeys, withdrawalCredentials, signatures, depositDataRoots, amounts],
-        })
+          args: [
+            pubkeys,
+            withdrawalCredentials,
+            signatures,
+            depositDataRoots,
+            amounts,
+          ],
+        });
       }
 
       // should move refetchBalance to onDeposit function ?
       refetchBalance();
     }
-  }, [contractConfig, credentialType, deposits, refetchBalance, totalDepositAmountBN, writeContract]);
+  }, [
+    contractConfig,
+    credentialType,
+    deposits,
+    refetchBalance,
+    totalDepositAmountBN,
+    writeContract,
+  ]);
 
   const depositSafeMsig = useCallback(async () => {
     if (contractConfig) {
-      const txs: any[] = [{
+      const txs: any[] = [
+        {
           address: contractConfig.addresses.token,
           abi: ERC677ABI,
           functionName: "approve",
           args: [
             contractConfig.addresses.deposit,
-            totalDepositAmountBN.reduce((sum, amount) => sum + amount, BigInt(0)),
+            totalDepositAmountBN.reduce(
+              (sum, amount) => sum + amount,
+              BigInt(0)
+            ),
           ],
-        }]
-      
+        },
+      ];
+
       for (let i = 0; i < deposits.length; i++) {
-        const {pubkeys, withdrawalCredentials, signatures, depositDataRoots, amounts}= generateDepositData(deposits[i]);
+        const {
+          pubkeys,
+          withdrawalCredentials,
+          signatures,
+          depositDataRoots,
+          amounts,
+        } = generateDepositData(deposits[i]);
         // batchDeposit the GNOs
-        console.log("Batch deposit",i, pubkeys, withdrawalCredentials, signatures, depositDataRoots, amounts);
+        console.log(
+          "Batch deposit",
+          i,
+          pubkeys,
+          withdrawalCredentials,
+          signatures,
+          depositDataRoots,
+          amounts
+        );
         txs.push({
           address: contractConfig.addresses.deposit,
           abi: depositABI,
           functionName: "batchDeposit",
-          args: [pubkeys, withdrawalCredentials, signatures, depositDataRoots, amounts],
-        })
+          args: [
+            pubkeys,
+            withdrawalCredentials,
+            signatures,
+            depositDataRoots,
+            amounts,
+          ],
+        });
       }
-      console.log(txs)
+      console.log(txs);
       writeContracts({
         contracts: txs,
         chainId: 100,
@@ -217,7 +331,14 @@ function useDeposit(contractConfig: ContractNetwork, address: `0x${string}`, cha
       // should move refetchBalance to onDeposit function ?
       refetchBalance();
     }
-  }, [contractConfig, , deposits, refetchBalance, totalDepositAmountBN, encodeFunctionData]);
+  }, [
+    contractConfig,
+    ,
+    deposits,
+    refetchBalance,
+    totalDepositAmountBN,
+    encodeFunctionData,
+  ]);
 
   useEffect(() => {
     if (depositSuccess) {
