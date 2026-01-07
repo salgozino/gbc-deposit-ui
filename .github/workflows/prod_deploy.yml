@@ -28,20 +28,20 @@ jobs:
                 for apt_file in `grep -lr microsoft /etc/apt/sources.list.d/`; do sudo rm $apt_file; done
 
             # Ref: https://github.com/actions/checkout/issues/1471#issuecomment-1771231294
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
             
             - name: Tag checkout
               run: |
                 git fetch --prune --unshallow --tags
                 git checkout ${{ github.event.inputs.tag }}
 
-            - uses: actions/cache@v4
+            - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
               with:
                 path: '**/node_modules'
                 key: ${{ runner.os }}-modules-${{ hashFiles('**/yarn.lock') }}
 
             - name: Setup Node.js
-              uses: actions/setup-node@v4
+              uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
 
             - name: Install
               run: |
@@ -71,7 +71,7 @@ jobs:
             #   run: xvfb-run --auto-servernum --server-args='-screen 0, 1920x1080x24' yarn run-e2e-tests
 
             - name: Configure AWS Production credentials
-              uses: aws-actions/configure-aws-credentials@v1
+              uses: aws-actions/configure-aws-credentials@67fbcbb121271f7775d2e7715933280b06314838 # v1
               with:
                 aws-access-key-id: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
                 aws-secret-access-key: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
