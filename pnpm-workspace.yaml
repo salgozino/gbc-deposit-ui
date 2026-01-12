@@ -1,4 +1,8 @@
-packages: []
+packages: [
+  "./",
+  "envio",
+  "hardhat"
+]
 
 minimumReleaseAge: 4320
 trustPolicy: no-downgrade
