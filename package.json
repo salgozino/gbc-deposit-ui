@@ -22,7 +22,6 @@
     "@tanstack/react-query": "5.29.0",
     "encoding": "^0.1.13",
     "envio": "2.32.6",
-    "ethers": "6.14.0",
     "graphql": "16.9.0",
     "next": "15.5.9",
     "p-queue": "8.0.1",
