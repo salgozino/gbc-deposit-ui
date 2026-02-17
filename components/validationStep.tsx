@@ -1,14 +1,13 @@
 import { CheckIcon } from '@heroicons/react/16/solid';
 import { DepositDataJson } from '@/utils/deposit';
-import { CredentialType } from '@/utils/constants';
-import { depositAmountBN } from '@/hooks/useDeposit';
+import { CredentialType, depositAmountBN } from '@/utils/constants';
 
 interface ValidationStepProps {
   depositData: {
-    deposits: DepositDataJson[];
+    deposits: DepositDataJson[][];
     filename: string;
     credentialType: CredentialType | undefined;
-    totalDepositAmountBN: bigint;
+    totalDepositAmountBN: bigint[];
   };
   onDeposit: () => Promise<void>;
 }
@@ -25,12 +24,20 @@ export function ValidationStep({
         <CheckIcon className='h-5 w-5' /> Accepted
       </div>
       <div className='flex items-center'>
-        <CheckIcon className='h-5 w-5' /> Validator deposits:{' '}
+        <CheckIcon className='h-5 w-5' /> Batches of deposits:{' '}
         {depositData.deposits.length}
       </div>
       <div className='flex items-center'>
+        <CheckIcon className='h-5 w-5' /> Validator deposits per batch:{' '}
+        {depositData.deposits.map(batch => batch.length).join(', ')}
+      </div>
+      <div className='flex items-center'>
+        <CheckIcon className='h-5 w-5' /> Total validators to be deployed:{' '}
+        {depositData.deposits.reduce((a, b) => a + b.length, 0)}
+      </div>
+      <div className='flex items-center'>
         <CheckIcon className='h-5 w-5' /> Total amount required:{' '}
-        {depositData.totalDepositAmountBN / depositAmountBN} GNO
+        {depositData.totalDepositAmountBN.reduce((a, b) => a + b, 0n) / depositAmountBN} GNO
       </div>
       <button
         className='bg-accent px-4 py-1 rounded-full text-white mt-4 text-lg font-semibold'

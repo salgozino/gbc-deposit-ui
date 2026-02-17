@@ -1,5 +1,8 @@
+import { parseUnits } from "viem";
+
 export const MAX_BATCH_DEPOSIT = 128;
 export const DEPOSIT_TOKEN_AMOUNT_OLD = 32000000000;
+export const depositAmountBN = parseUnits("1", 18);
 export const SECOND_IN_DAY = 86400;
 
 export enum CredentialType {

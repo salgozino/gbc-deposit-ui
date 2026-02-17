@@ -62,6 +62,23 @@ const depositABI = [
         name: "deposit_data_roots",
         type: "bytes32[]",
       },
+      { internalType: "uint256[]", name: "amounts", type: "uint256[]" },
+    ],
+    name: "batchDeposit",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "bytes", name: "pubkeys", type: "bytes" },
+      { internalType: "bytes", name: "withdrawal_credentials", type: "bytes" },
+      { internalType: "bytes", name: "signatures", type: "bytes" },
+      {
+        internalType: "bytes32[]",
+        name: "deposit_data_roots",
+        type: "bytes32[]",
+      },
     ],
     name: "batchDeposit",
     outputs: [],
@@ -86,7 +103,9 @@ const depositABI = [
     type: "function",
   },
   {
-    inputs: [{ internalType: "address[]", name: "_addresses", type: "address[]" }],
+    inputs: [
+      { internalType: "address[]", name: "_addresses", type: "address[]" },
+    ],
     name: "claimWithdrawals",
     outputs: [],
     stateMutability: "nonpayable",
